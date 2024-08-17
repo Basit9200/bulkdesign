@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload and Parse Excel File</title>
+    <!-- Load the xlsx library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <!-- Load JSZip library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <!-- Load FileSaver library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- Load pdf-lib library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+</head>
+<body>
+    <h1>Upload and Parse Excel File</h1>
+    <input type="file" id="upload" accept=".xlsx, .xls">
+    <button onclick="generatePDF()">Generate PDF</button>
+    <div id="result">
+        <h2>SVG Design Preview</h2>
+        <div id="svg-preview"></div>
+    </div>
+
+    <script>
+        let svgTemplate = "";
+
+        async function fetchSVG() {
+            try {
+                const response = await fetch("./design.svg");
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                svgTemplate = await response.text();
+                // Initial SVG preview if needed
+                updateSVGPreview([]);
+            } catch (error) {
+                console.error('There has been a problem with your fetch operation:', error);
+            }
+        }
+
+        function updateSVGPreview(svgs = []) {
+            const previewContainer = document.getElementById('svg-preview');
+            previewContainer.innerHTML = ''; // Clear previous previews
+            svgs.forEach((svg) => {
+                const svgContainer = document.createElement('div');
+                svgContainer.innerHTML = svg;
+                previewContainer.appendChild(svgContainer);
+            });
+        }
+
+        fetchSVG();
+
+        let excelData = [];
+
+        document.getElementById('upload').addEventListener('change', handleFile, false);
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                console.log(jsonData);
+
+                jsonData.shift();
+                excelData = jsonData;
+
+                // Generate SVGs for each row and update preview
+                const svgList = jsonData.map(row => modifySVG(svgTemplate, row));
+                updateSVGPreview(svgList);
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function modifySVG(svg, row) {
+            return svg
+                .replace('{{row[0]}}', row[0] || '')
+                .replace('{{row[1]}}', row[1] || '')
+                .replace('{{row[2]}}', row[2] || '')
+                .replace('{{row[3]}}', row[3] || '')
+                .replace('{{row[4]}}', row[4] || '')
+                .replace('{{row[5]}}', row[5] || '')
+                .replace('{{row[6]}}', row[6] || '')
+                .replace('{{row[7]}}', row[7] || '');
+        }
+
+        async function svgToPng(svgData) {
+            return new Promise((resolve, reject) => {
+                const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(svgBlob);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width*10;
+                    canvas.height = img.height*10;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    canvas.toBlob(blob => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsArrayBuffer(blob);
+                    }, 'image/png');
+                };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        async function generatePDF() {
+            const pdfDoc = await PDFLib.PDFDocument.create();
+
+            for (const row of excelData) {
+                const modifiedSVG = modifySVG(svgTemplate, row);
+                const pngArrayBuffer = await svgToPng(modifiedSVG);
+
+                const pngImage = await pdfDoc.embedPng(pngArrayBuffer);
+                const { width, height } = pngImage.scale(1);
+
+                const page = pdfDoc.addPage([width, height]);
+                page.drawImage(pngImage, { x: 0, y: 0, width, height });
+            }
+
+            const pdfBytes = await pdfDoc.save();
+
+            // Create download link
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
+            link.download = 'designs.pdf';
+            link.click();
+        }
+    </script>
+</body>
+</html>

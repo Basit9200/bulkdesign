@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG to PDF Converter</title>
+</head>
+<body>
+  <input type="file" id="fileInput" accept=".zip"/>
+  <button id="download">Download PDF</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+    document.getElementById('fileInput').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (file && file.type === 'application/zip') {
+        const jszip = new JSZip();
+        const zip = await jszip.loadAsync(file);
+
+        const pdfDoc = await PDFLib.PDFDocument.create();
+        const svgFiles = Object.keys(zip.files).filter(fileName => fileName.endsWith('.svg'));
+
+        // Create an array to hold promises for each SVG conversion
+        const conversionPromises = svgFiles.map(async (fileName) => {
+          const svgData = await zip.files[fileName].async('text');
+
+          // Create a new page in the PDF document
+          const svgImage = new Image();
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          svgImage.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+
+          return new Promise((resolve) => {
+            svgImage.onload = () => {
+              canvas.width = svgImage.width*5;
+              canvas.height = svgImage.height*5;
+              ctx.drawImage(svgImage, 0, 0);
+
+              canvas.toBlob(async (blob) => {
+                const pngData = await new Promise(resolve => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.readAsDataURL(blob);
+                });
+
+                const pngImage = await pdfDoc.embedPng(pngData);
+
+                const page = pdfDoc.addPage([svgImage.width, svgImage.height]);
+                page.drawImage(pngImage, { x: 0, y: 0, width: svgImage.width, height: svgImage.height });
+
+                resolve();
+              }, 'image/png');
+            };
+          });
+        });
+
+        // Wait for all SVG conversions to complete
+        await Promise.all(conversionPromises);
+
+        // Serialize the PDF document to bytes
+        const pdfBytes = await pdfDoc.save();
+
+        // Create download link
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
+        link.download = 'combined.pdf';
+        link.click();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drag and Drop HTML Editor</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #editor-container {
+            border: 1px solid #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        #editor {
+            position: relative;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            overflow: hidden;
+        }
+
+        .text {
+            padding: 10px;
+            cursor: move;
+            position: absolute;
+        }
+
+        .selected {
+            border: 2px dashed red;
+        }
+    </style>
+</head>
+<body>
+    <div id="editor-container">
+        <input type="file" id="uploadImage" accept="image/*">
+        <button id="addtext" style="display:none;">Add Text</button>
+        <label for="fontSize">Font Size: </label>
+        <input type="number" id="fontSize" min="10" max="72" value="16">
+        <button id="exportPdf" style="display:none;">Export to PDF</button>
+        <div id="editor"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script>
+        let imgWidth, imgHeight;
+        let selectedText = null;
+
+        document.getElementById('uploadImage').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    imgWidth = img.width;
+                    imgHeight = img.height;
+                    const editor = document.getElementById('editor');
+                    editor.style.width = imgWidth + 'px';
+                    editor.style.height = imgHeight + 'px';
+                    editor.style.backgroundImage = 'url(' + e.target.result + ')';
+                    document.getElementById('addtext').style.display = 'inline-block';
+                    document.getElementById('exportPdf').style.display = 'inline-block';
+                }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('addtext').addEventListener('click', function() {
+            const text = document.createElement('div');
+            text.contentEditable = true;
+            text.className = 'text';
+            text.innerText = 'Text';
+            text.style.top = '50px';
+            text.style.left = '50px';
+            text.style.fontSize = document.getElementById('fontSize').value + 'px';
+            document.getElementById('editor').appendChild(text);
+            makeDraggable(text);
+
+            text.addEventListener('click', function() {
+                if (selectedText) {
+                    selectedText.classList.remove('selected');
+                }
+                selectedText = text;
+                selectedText.classList.add('selected');
+                document.getElementById('fontSize').value = parseInt(window.getComputedStyle(selectedText).fontSize);
+            });
+        });
+
+        document.getElementById('fontSize').addEventListener('input', function() {
+            if (selectedText) {
+                selectedText.style.fontSize = document.getElementById('fontSize').value + 'px';
+            }
+        });
+
+        document.getElementById('exportPdf').addEventListener('click', async function() {
+            const editorContent = document.getElementById('editor');
+            const scale = 4; // Adjust the scale for higher resolution
+            const canvas = document.createElement('canvas');
+            canvas.width = imgWidth * scale;
+            canvas.height = imgHeight * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(scale, scale);
+
+            const options = {
+                backgroundColor: null,
+                canvas: canvas,
+                scale: scale
+            };
+
+            await html2pdf().from(editorContent).set({
+                margin: 0,
+                filename: 'editor-content.pdf',
+                html2canvas: options,
+                jsPDF: { unit: 'px', format: [imgWidth, imgHeight], orientation: 'landscape' }
+            }).save();
+        });
+
+        function makeDraggable(element) {
+            let offsetX, offsetY;
+
+            element.addEventListener('mousedown', function(e) {
+                offsetX = e.clientX - parseInt(window.getComputedStyle(element).left);
+                offsetY = e.clientY - parseInt(window.getComputedStyle(element).top);
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+            });
+
+            function mouseMoveHandler(e) {
+                element.style.left = (e.clientX - offsetX) + 'px';
+                element.style.top = (e.clientY - offsetY) + 'px';
+            }
+
+            function mouseUpHandler() {
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('mouseup', mouseUpHandler);
+            }
+        }
+    </script>
+</body>
+</html>
